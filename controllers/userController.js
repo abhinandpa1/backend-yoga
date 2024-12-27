@@ -1,64 +1,54 @@
-const User = require('../models/User'); // Import the User model
+const User = require('../models/User');
 const bcrypt = require('bcryptjs');
-const { generateToken } = require('../utils/tokenUtils'); // Import the JWT utility
+const jwt = require('jsonwebtoken');
 
-// Register user
-const registerUser = async (req, res) => {
+// Register User
+exports.registerUser = async (req, res) => {
   const { name, email, password } = req.body;
 
   try {
-    // Check if user already exists
-    const userExists = await User.findOne({ email });
+    const userExist = await User.findOne({ email });
+    if (userExist) return res.status(400).json({ message: 'User already exists' });
 
-    if (userExists) {
-      return res.status(400).json({ message: 'User already exists' });
-    }
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(password, salt);
 
-    // Create new user
-    const newUser = new User({
-      name,
-      email,
-      password,
-    });
-
-    // Save the user to the database
+    const newUser = new User({ name, email, password: hashedPassword });
     await newUser.save();
-
-    // Send success response
     res.status(201).json({ message: 'User registered successfully' });
   } catch (error) {
-    res.status(500).json({ message: 'Server error', error: error.message });
+    res.status(500).json({ message: 'Server error' });
   }
 };
 
-// Login user
-const loginUser = async (req, res) => {
+// Login User
+exports.loginUser = async (req, res) => {
   const { email, password } = req.body;
 
   try {
-    // Find user by email
     const user = await User.findOne({ email });
+    if (!user) return res.status(400).json({ message: 'User does not exist' });
 
-    if (!user) {
-      return res.status(400).json({ message: 'Invalid credentials' });
-    }
+    const isMatch = await bcrypt.compare(password, user.password);
+    if (!isMatch) return res.status(400).json({ message: 'Invalid credentials' });
 
-    // Compare the entered password with the stored hash
-    const isMatch = await user.matchPassword(password);
-
-    if (!isMatch) {
-      return res.status(400).json({ message: 'Invalid credentials' });
-    }
-
-    // Create JWT token
-    const token = generateToken(user._id);
-
-    // Send response with token
-    res.status(200).json({ message: 'Login successful', token });
+    const token = jwt.sign({ id: user._id }, 'your_jwt_secret', { expiresIn: '1h' });
+    res.status(200).json({ token });
   } catch (error) {
-    res.status(500).json({ message: 'Server error', error: error.message });
+    res.status(500).json({ message: 'Server error' });
   }
 };
 
-module.exports = { registerUser, loginUser };
+// Get User Profile
+exports.getUserProfile = async (req, res) => {
+  try {
+    const user = await User.findById(req.user.id).select('-password');
+    if (!user) return res.status(404).json({ message: 'User not found' });
+
+    res.status(200).json(user);
+  } catch (error) {
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
 
